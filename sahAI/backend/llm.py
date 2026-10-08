@@ -2,29 +2,43 @@ import json
 import os
 from typing import Any
 
-from openai import APIConnectionError, APIStatusError, OpenAI
+from google import genai
+from google.genai import errors, types
 
 try:
-    from .config import OPENAI_MODEL
+    from .config import GEMINI_MODEL
 except ImportError:
-    from config import OPENAI_MODEL
+    from config import GEMINI_MODEL
 
 
 class AIServiceError(RuntimeError):
     """A safe, user-facing error from the answer service."""
 
 
+def _get_api_key() -> str | None:
+    api_key = os.getenv("GEMINI_API_KEY")
+    if api_key:
+        return api_key
+
+    try:
+        import streamlit as st
+
+        return st.secrets.get("GEMINI_API_KEY")
+    except Exception:
+        return None
+
+
 def generate_answer(
     question: str, passages: list[dict[str, Any]]
 ) -> dict[str, Any]:
-    api_key = os.getenv("OPENAI_API_KEY")
+    api_key = _get_api_key()
     if not api_key:
         raise AIServiceError(
-            "The answer service is not configured. Add OPENAI_API_KEY to your "
+            "The answer service is not configured. Add GEMINI_API_KEY to your "
             "environment or platform secrets."
         )
 
-    client = OpenAI(api_key=api_key)
+    client = genai.Client(api_key=api_key)
     evidence = [
         {
             "pdfPage": passage["pdf_page"],
@@ -36,67 +50,71 @@ def generate_answer(
     ]
 
     try:
-        completion = client.chat.completions.create(
-            model=OPENAI_MODEL,
-            response_format={"type": "json_object"},
-            max_completion_tokens=1400,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are sahAI, an assistant for students asking about "
-                        "MLRITM's MLRS-BT25 B.Tech regulations. Answer only from "
-                        "the supplied passages. Do not use outside knowledge or "
-                        "guess. Explain the rule clearly and preserve important "
-                        "conditions, thresholds, dates, and exceptions. If the "
-                        "passages do not directly support an answer, set status "
-                        "to not_found and say you could not verify it from this "
-                        "document. Return JSON only with fields: answer (string), "
-                        "status (answered or not_found), citedPdfPages (array of "
-                        "supplied PDF page numbers), and needsHumanReview (boolean). "
-                        "Cite only supplied pages and do not put citations inside "
-                        "the answer text. Set needsHumanReview true for unanswered, "
-                        "ambiguous, or case-specific policy questions."
-                    ),
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=json.dumps(
+                {"question": question, "regulationPassages": evidence},
+                ensure_ascii=False,
+            ),
+            config=types.GenerateContentConfig(
+                system_instruction=(
+                    "You are sahAI, an assistant for MLRITM R25 CSM students "
+                    "asking about the MLRS-BT25 B.Tech regulations. Answer only "
+                    "from the supplied passages. Do not use outside knowledge "
+                    "or guess. Explain the rule clearly and preserve important "
+                    "conditions, thresholds, dates, and exceptions. If the "
+                    "passages do not directly support an answer, set status to "
+                    "not_found and say you could not verify it from this document. "
+                    "Cite only supplied PDF pages. Set needsHumanReview true for "
+                    "unanswered, ambiguous, or case-specific policy questions."
+                ),
+                response_mime_type="application/json",
+                response_schema={
+                    "type": "OBJECT",
+                    "properties": {
+                        "answer": {"type": "STRING"},
+                        "status": {
+                            "type": "STRING",
+                            "enum": ["answered", "not_found"],
+                        },
+                        "citedPdfPages": {
+                            "type": "ARRAY",
+                            "items": {"type": "INTEGER"},
+                        },
+                        "needsHumanReview": {"type": "BOOLEAN"},
+                    },
+                    "required": [
+                        "answer",
+                        "status",
+                        "citedPdfPages",
+                        "needsHumanReview",
+                    ],
                 },
-                {
-                    "role": "user",
-                    "content": json.dumps(
-                        {"question": question, "regulationPassages": evidence},
-                        ensure_ascii=False,
-                    ),
-                },
-            ],
+                max_output_tokens=1400,
+            ),
         )
-    except APIStatusError as error:
-        code = getattr(error, "code", None)
-        status = getattr(error, "status_code", None)
-        if status == 429 and code in {
-            "credit_balance_exhausted",
-            "insufficient_quota",
-        }:
-            raise AIServiceError(
-                "The OpenAI account connected to sahAI has run out of API credits. "
-                "Add billing or credits to that account, then try again."
-            ) from None
+    except errors.APIError as error:
+        status = getattr(error, "code", None)
         if status == 429:
             raise AIServiceError(
-                "OpenAI is rate-limiting requests. Wait a moment, then try again."
+                "The Gemini API quota or rate limit has been reached. Check your "
+                "Google AI Studio project, then try again."
             ) from None
         if status in {401, 403}:
             raise AIServiceError(
-                "The OpenAI key configured for sahAI is not authorized. Update "
-                "OPENAI_API_KEY in your platform secrets."
+                "The Gemini API key configured for sahAI is not authorized. Update "
+                "GEMINI_API_KEY in your environment or platform secrets."
+            ) from None
+        if status == 503:
+            raise AIServiceError(
+                "Gemini is temporarily experiencing high demand. Please try again "
+                "shortly."
             ) from None
         raise AIServiceError(
-            "OpenAI could not answer right now. Please try again shortly."
-        ) from None
-    except APIConnectionError:
-        raise AIServiceError(
-            "sahAI could not connect to OpenAI. Check your connection and try again."
+            "Gemini could not answer right now. Please try again shortly."
         ) from None
 
-    content = completion.choices[0].message.content
+    content = response.text
     try:
         parsed = json.loads(content or "")
     except json.JSONDecodeError:
