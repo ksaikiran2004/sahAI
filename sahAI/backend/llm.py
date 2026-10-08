@@ -28,6 +28,59 @@ def _get_api_key() -> str | None:
         return None
 
 
+def _api_error_message(status: int | None) -> str:
+    if status == 429:
+        return (
+            "The Gemini API quota or rate limit has been reached. Check your "
+            "Google AI Studio project, then try again."
+        )
+    if status in {401, 403}:
+        return (
+            "The Gemini API key configured for sahAI is not authorized. Update "
+            "GEMINI_API_KEY in your environment or platform secrets."
+        )
+    if status == 503:
+        return "Gemini is temporarily experiencing high demand. Please try again shortly."
+    return "Gemini could not answer right now. Please try again shortly."
+
+
+def generate_general_answer(question: str) -> str:
+    api_key = _get_api_key()
+    if not api_key:
+        raise AIServiceError(
+            "The answer service is not configured. Add GEMINI_API_KEY to your "
+            "environment or platform secrets."
+        )
+
+    client = genai.Client(api_key=api_key)
+    try:
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=question,
+            config=types.GenerateContentConfig(
+                system_instruction=(
+                    "You are sahAI, a helpful assistant for students. Answer basic "
+                    "general-knowledge and educational questions clearly and "
+                    "concisely. Do not invent current facts. Do not provide "
+                    "institution-specific rules or R25 policy; those require "
+                    "the supplied regulation document. For uncertain or high-stakes "
+                    "questions, state the limitation and recommend an appropriate "
+                    "authoritative source."
+                ),
+                max_output_tokens=700,
+            ),
+        )
+    except errors.APIError as error:
+        raise AIServiceError(_api_error_message(getattr(error, "code", None))) from None
+
+    answer = (response.text or "").strip()
+    if not answer:
+        raise AIServiceError(
+            "The answer service returned an empty response. Please try again."
+        )
+    return answer
+
+
 def generate_answer(
     question: str, passages: list[dict[str, Any]]
 ) -> dict[str, Any]:
@@ -95,24 +148,7 @@ def generate_answer(
         )
     except errors.APIError as error:
         status = getattr(error, "code", None)
-        if status == 429:
-            raise AIServiceError(
-                "The Gemini API quota or rate limit has been reached. Check your "
-                "Google AI Studio project, then try again."
-            ) from None
-        if status in {401, 403}:
-            raise AIServiceError(
-                "The Gemini API key configured for sahAI is not authorized. Update "
-                "GEMINI_API_KEY in your environment or platform secrets."
-            ) from None
-        if status == 503:
-            raise AIServiceError(
-                "Gemini is temporarily experiencing high demand. Please try again "
-                "shortly."
-            ) from None
-        raise AIServiceError(
-            "Gemini could not answer right now. Please try again shortly."
-        ) from None
+        raise AIServiceError(_api_error_message(status)) from None
 
     content = response.text
     try:

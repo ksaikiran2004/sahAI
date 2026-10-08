@@ -20,6 +20,29 @@ class AppImportTest(unittest.TestCase):
         self.assertIn("hi", response.lower())
         self.assertIn("R25", response)
 
+    def test_general_question_stays_outside_regulation_retrieval(self):
+        module = importlib.import_module("sahAI.backend.app")
+        self.assertFalse(module.is_regulation_question("What is photosynthesis?"))
+        self.assertTrue(
+            module.is_regulation_question("What attendance is required in R25?")
+        )
+        self.assertTrue(
+            module.is_regulation_question("How many credits are needed to graduate?")
+        )
+
+    def test_general_answer_uses_gemini_without_regulation_passages(self):
+        from sahAI.backend import llm
+
+        with patch.object(llm, "_get_api_key", return_value="test-key"):
+            with patch.object(llm.genai, "Client") as client_factory:
+                client = client_factory.return_value
+                client.models.generate_content.return_value.text = "Photosynthesis uses light."
+
+                answer = llm.generate_general_answer("What is photosynthesis?")
+
+        self.assertEqual(answer, "Photosynthesis uses light.")
+        client.models.generate_content.assert_called_once()
+
     def test_repo_and_project_dotenv_paths_are_loaded(self):
         module = importlib.import_module("sahAI.backend.app")
         with patch.object(module, "load_dotenv") as load_dotenv:

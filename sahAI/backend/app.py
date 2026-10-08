@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 if __package__:
     from .config import PROJECT_DIR, REGULATION_PDF_PATH
     from .ingest import extract_pages
-    from .llm import AIServiceError, generate_answer
+    from .llm import AIServiceError, generate_answer, generate_general_answer
     from .rag import retrieve_passages
 else:
     project_root = Path(__file__).resolve().parents[1]
@@ -21,12 +21,12 @@ else:
     try:
         from sahAI.backend.config import PROJECT_DIR, REGULATION_PDF_PATH
         from sahAI.backend.ingest import extract_pages
-        from sahAI.backend.llm import AIServiceError, generate_answer
+        from sahAI.backend.llm import AIServiceError, generate_answer, generate_general_answer
         from sahAI.backend.rag import retrieve_passages
     except ModuleNotFoundError:
         from backend.config import PROJECT_DIR, REGULATION_PDF_PATH
         from backend.ingest import extract_pages
-        from backend.llm import AIServiceError, generate_answer
+        from backend.llm import AIServiceError, generate_answer, generate_general_answer
         from backend.rag import retrieve_passages
 
 def load_environment() -> None:
@@ -284,6 +284,12 @@ SMALL_TALK_PATTERNS = {
         "bye", "goodbye", "see you", "talk later", "later", "thanks", "thank you"
     ],
 }
+REGULATION_CUES = (
+    "r25", "r 25", "bt25", "mlritm", "regulation", "attendance",
+    "semester end", "semester-end", "exam", "examination", "internal marks",
+    "external marks", "sgpa", "cgpa", "credits", "marks", "backlog",
+    "supplementary", "detained", "revaluation", "promotion", "credit requirement",
+)
 
 
 def get_small_talk_response(question: str) -> str | None:
@@ -306,6 +312,12 @@ def get_small_talk_response(question: str) -> str | None:
         )
 
     return None
+
+
+def is_regulation_question(question: str) -> bool:
+    normalized = re.sub(r"[^a-z0-9\s]", " ", question.lower())
+    normalized = " ".join(normalized.split())
+    return any(cue in normalized for cue in REGULATION_CUES)
 
 
 @st.cache_data(show_spinner=False)
@@ -339,9 +351,9 @@ st.markdown(
         <div class="edition-label">MLRITM / R25 / CSM</div>
     </div>
     <div class="hero-block">
-        <div class="hero-overline">Regulation desk</div>
+        <div class="hero-overline">Student desk</div>
         <h1>R25, made clear.</h1>
-        <div class="hero-subtitle">Academic regulations for MLRITM CSM</div>
+        <div class="hero-subtitle">R25 answers, study topics, and general questions</div>
     </div>
     """,
     unsafe_allow_html=True,
@@ -381,7 +393,7 @@ if source_error:
     st.error(source_error)
 elif not pages:
     st.info(
-        "R25 regulations are unavailable. Add the authorized PDF to enable answers."
+        "R25 answers need the regulation PDF. General questions are still available."
     )
 
 if not st.session_state.messages:
@@ -403,7 +415,9 @@ for message in st.session_state.messages:
             st.error(message["content"])
         else:
             st.markdown(message["content"])
-            if message["role"] == "assistant":
+            if message["role"] == "assistant" and message.get("answer_type") == "general":
+                st.caption("General knowledge, not verified against the R25 regulations.")
+            elif message["role"] == "assistant" and message.get("answer_type") != "small_talk":
                 if message.get("status") == "not_found":
                     st.caption(
                         "This question may need a staff member’s guidance. "
@@ -412,7 +426,7 @@ for message in st.session_state.messages:
                 render_citations(message.get("citations", []))
 
 pending_question = st.session_state.pop("pending_question", None)
-typed_question = st.chat_input("Ask about attendance, exams, credits, or grading")
+typed_question = st.chat_input("Ask about R25, study topics, or general questions")
 question = pending_question or typed_question
 
 if question:
@@ -431,8 +445,37 @@ if question:
             if small_talk_response:
                 st.markdown(small_talk_response)
                 st.session_state.messages.append(
-                    {"role": "assistant", "content": small_talk_response, "status": "answered"}
+                    {
+                        "role": "assistant",
+                        "content": small_talk_response,
+                        "status": "answered",
+                        "answer_type": "small_talk",
+                    }
                 )
+            elif not is_regulation_question(cleaned_question):
+                with st.spinner("Putting together a general answer…"):
+                    try:
+                        answer = generate_general_answer(cleaned_question)
+                        st.markdown(answer)
+                        st.caption(
+                            "General knowledge, not verified against the R25 regulations."
+                        )
+                        st.session_state.messages.append(
+                            {
+                                "role": "assistant",
+                                "content": answer,
+                                "answer_type": "general",
+                            }
+                        )
+                    except AIServiceError as error:
+                        st.error(str(error))
+                        st.session_state.messages.append(
+                            {
+                                "role": "assistant",
+                                "content": str(error),
+                                "is_error": True,
+                            }
+                        )
             elif not pages:
                 error_message = (
                     "The R25 regulation source is not available. Add the private "
