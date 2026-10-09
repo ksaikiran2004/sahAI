@@ -1,3 +1,5 @@
+import base64
+import logging
 import os
 import re
 import sys
@@ -38,28 +40,35 @@ def load_environment() -> None:
 
 
 load_environment()
+logger = logging.getLogger(__name__)
 
 st.set_page_config(page_title="sahAI — R25 Assistant", layout="wide")
+
+logo_path = PROJECT_DIR / "logo.png"
+logo_data = base64.b64encode(logo_path.read_bytes()).decode("ascii") if logo_path.is_file() else ""
 
 st.markdown(
     """
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
 
     :root {
-        --ink: #1d1d1f;
-        --muted: #707076;
-        --canvas: #f5f5f7;
-        --surface: #ffffff;
-        --line: #e4e4e8;
-        --accent: #1671e8;
-        --accent-soft: #edf4ff;
+        --ink: #f1f8f3;
+        --muted: #a1b5a8;
+        --canvas: #07120d;
+        --surface: #102219;
+        --line: #284638;
+        --accent: #c5f44a;
+        --accent-soft: #183522;
     }
 
     .stApp {
-        background: var(--canvas);
+        background:
+            radial-gradient(ellipse at 50% -18%, rgba(23, 107, 68, 0.35), transparent 48%),
+            radial-gradient(ellipse at 100% 65%, rgba(148, 196, 53, 0.08), transparent 34%),
+            var(--canvas);
         color: var(--ink);
-        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'DM Sans', sans-serif;
+        font-family: 'Manrope', sans-serif;
     }
     .stApp::before {
         content: "";
@@ -67,16 +76,20 @@ st.markdown(
         inset: 0 0 auto;
         height: 2px;
         z-index: 1000;
-        background: var(--accent);
+        background: linear-gradient(90deg, #21dc91, #c5f44a);
     }
-    [data-testid="stHeader"] { background: rgba(245, 245, 247, 0.86); }
+    [data-testid="stHeader"] {
+        background: transparent !important;
+        box-shadow: none !important;
+    }
+    [data-testid="stToolbar"] { background: transparent !important; }
     [data-testid="stMainBlockContainer"] {
-        max-width: 1120px;
-        padding: 1.5rem 2.6rem 8rem;
+        max-width: 1060px;
+        padding: 1.2rem 2.6rem 8rem;
     }
     h1, h2, h3, p, label, button, textarea {
         color: var(--ink);
-        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'DM Sans', sans-serif;
+        font-family: 'Manrope', sans-serif;
     }
     h1 {
         font-size: 2.8rem !important;
@@ -89,8 +102,8 @@ st.markdown(
         font-size: 0.8rem;
     }
     [data-testid="stSidebar"] {
-        background: #f0f0f2;
-        border-right: 1px solid #e1e1e5;
+        background: rgba(9, 24, 16, 0.92);
+        border-right: 1px solid var(--line);
     }
     [data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
         gap: 0.72rem;
@@ -114,7 +127,7 @@ st.markdown(
         border-radius: 8px;
         background: var(--surface);
         color: var(--ink);
-        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'DM Sans', sans-serif;
+        font-family: 'Manrope', sans-serif;
         font-size: 0.92rem;
         font-weight: 500;
         text-align: left;
@@ -131,26 +144,26 @@ st.markdown(
     [data-testid="stChatMessage"] {
         border: 1px solid var(--line);
         border-radius: 8px;
-        background: rgba(255, 255, 255, 0.88);
+        background: linear-gradient(135deg, rgba(17, 37, 26, 0.96), rgba(12, 29, 20, 0.94));
         padding: 1rem 1.1rem;
-        box-shadow: 0 2px 8px rgba(29, 29, 31, 0.025);
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.14);
     }
     [data-testid="stChatMessageAvatar"] { display: none !important; }
-    [data-testid="stChatMessage"] > div:first-child { display: none !important; }
     [data-testid="stChatInput"] textarea {
-        border: 1px solid #d8d8dc;
+        border: 1px solid #355844;
         border-radius: 8px;
-        background: var(--surface);
-        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'DM Sans', sans-serif;
+        background: #0d1e14;
+        color: var(--ink);
+        font-family: 'Manrope', sans-serif;
         font-size: 0.96rem;
     }
     [data-testid="stChatInput"] textarea:focus {
         border-color: var(--accent);
-        box-shadow: 0 0 0 3px rgba(22, 113, 232, 0.12);
+        box-shadow: 0 0 0 3px rgba(197, 244, 74, 0.14);
     }
     [data-testid="stBottom"] {
-        background: rgba(245, 245, 247, 0.9);
-        border-top: 1px solid rgba(228, 228, 232, 0.8);
+        background: rgba(7, 18, 13, 0.88);
+        border-top: 1px solid rgba(40, 70, 56, 0.9);
         backdrop-filter: blur(20px);
     }
     [data-testid="stBottom"] [data-testid="stBottomBlockContainer"] {
@@ -163,36 +176,52 @@ st.markdown(
         border-radius: 8px;
         background: var(--surface);
     }
+    [data-testid="stExpander"] summary,
+    [data-testid="stMarkdownContainer"] p,
+    [data-testid="stMarkdownContainer"] li { color: var(--ink); }
+    [data-testid="stAlert"] {
+        border-radius: 8px;
+        background: #12271b;
+        color: var(--ink);
+    }
+    [data-testid="stChatInput"] button {
+        background: var(--accent) !important;
+        color: #102017 !important;
+        border: 0 !important;
+    }
     .masthead {
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 1rem;
-        padding-bottom: 1.15rem;
+        padding: 0.45rem 0 1.1rem;
         border-bottom: 1px solid var(--line);
-        margin-bottom: 2.2rem;
+        margin-bottom: 1.8rem;
     }
     .brand-lockup {
         display: flex;
         align-items: center;
-        gap: 0.65rem;
+        gap: 0.85rem;
         color: var(--ink);
-        font-size: 1rem;
-        font-weight: 650;
+        font-size: 1.2rem;
+        font-weight: 800;
     }
-    .brand-mark {
-        display: grid;
-        width: 2rem;
-        height: 2rem;
-        place-items: center;
-        border-radius: 7px;
-        background: var(--ink);
-        color: #fff;
-        font-size: 1rem;
+    .brand-logo {
+        width: 5.5rem;
+        height: 5.5rem;
+        object-fit: contain;
+        filter: drop-shadow(0 0 18px rgba(41, 231, 143, 0.25));
+    }
+    .brand-name small {
+        display: block;
+        margin-top: 0.08rem;
+        color: var(--muted);
+        font-size: 0.66rem;
         font-weight: 600;
+        text-transform: uppercase;
     }
     .edition-label, .hero-overline, .section-overline {
-        color: var(--muted);
+        color: #c5f44a;
         font-size: 0.68rem;
         font-weight: 600;
         letter-spacing: 0.08em;
@@ -202,6 +231,7 @@ st.markdown(
         margin-bottom: 2.35rem;
         animation: arrive 420ms ease-out both;
     }
+    .hero-block h1 { color: #f2faef; }
     .hero-block h1 {
         margin: 0.45rem 0 0.55rem !important;
         letter-spacing: -0.035em;
@@ -254,7 +284,9 @@ st.markdown(
         [data-testid="stMainBlockContainer"] {
             padding: 1.1rem 1rem 7rem;
         }
-        .masthead { margin-bottom: 1.65rem; }
+        .masthead { margin-bottom: 1.4rem; }
+        .brand-logo { width: 4.2rem; height: 4.2rem; }
+        .brand-lockup { font-size: 1rem; gap: 0.55rem; }
         .hero-block { margin-bottom: 1.7rem; }
         .hero-block h1 { font-size: 2.25rem !important; }
         .edition-label { font-size: 0.6rem; text-align: right; }
@@ -299,13 +331,14 @@ def get_small_talk_response(question: str) -> str | None:
     normalized = re.sub(r"[^a-z0-9\s]", " ", question.lower())
     normalized = " ".join(normalized.split())
 
-    if any(token in normalized for token in SMALL_TALK_PATTERNS["greeting"]):
+    greetings = SMALL_TALK_PATTERNS["greeting"]
+    if normalized in greetings or normalized in {f"{greeting} there" for greeting in greetings}:
         return (
             "Hi! I’m sahAI, your MLRS-BT25 / R25 regulation assistant. Ask me about "
             "attendance, credits, exams, grading, or any specific academic rule."
         )
 
-    if any(token in normalized for token in SMALL_TALK_PATTERNS["farewell"]):
+    if normalized in SMALL_TALK_PATTERNS["farewell"]:
         return (
             "Goodbye! If you want, ask me about the R25 regulations for attendance, exams, "
             "credits, grading, or academic rules."
@@ -345,9 +378,9 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 
 st.markdown(
-    """
+    f"""
     <div class="masthead">
-        <div class="brand-lockup"><span class="brand-mark">s</span><span>sahAI</span></div>
+        <div class="brand-lockup"><img class="brand-logo" src="data:image/png;base64,{logo_data}" alt="sahAI logo"><span class="brand-name">R25 Student Desk<small>MLRITM Academic Guide</small></span></div>
         <div class="edition-label">MLRITM / R25 / CSM</div>
     </div>
     <div class="hero-block">
@@ -418,7 +451,9 @@ for message in st.session_state.messages:
             if message["role"] == "assistant" and message.get("answer_type") == "general":
                 st.caption("General knowledge, not verified against the R25 regulations.")
             elif message["role"] == "assistant" and message.get("answer_type") != "small_talk":
-                if message.get("status") == "not_found":
+                if message.get("answer_type") == "regulation_fallback":
+                    st.caption("AI summary unavailable. Showing matching R25 source text.")
+                elif message.get("status") == "not_found":
                     st.caption(
                         "This question may need a staff member’s guidance. "
                         "Check with your department before acting on it."
@@ -467,12 +502,20 @@ if question:
                                 "answer_type": "general",
                             }
                         )
-                    except AIServiceError as error:
-                        st.error(str(error))
+                    except Exception as error:
+                        if isinstance(error, AIServiceError):
+                            error_message = str(error)
+                        else:
+                            logger.exception("Unexpected general-answer failure")
+                            error_message = (
+                                "I couldn't complete that response. Your question is saved; "
+                                "please try again."
+                            )
+                        st.error(error_message)
                         st.session_state.messages.append(
                             {
                                 "role": "assistant",
-                                "content": str(error),
+                                "content": error_message,
                                 "is_error": True,
                             }
                         )
@@ -487,6 +530,7 @@ if question:
                 )
             else:
                 with st.spinner("Checking the R25 regulation…"):
+                    passages = []
                     try:
                         passages = retrieve_passages(cleaned_question, pages)
                         if not passages:
@@ -518,12 +562,35 @@ if question:
                                 "citations": response["citations"],
                             }
                         )
-                    except AIServiceError as error:
-                        st.error(str(error))
+                    except Exception as error:
+                        if not isinstance(error, AIServiceError):
+                            logger.exception("Unexpected regulation-answer failure")
+                        citations = [
+                            {
+                                "pdf_page": passage["pdf_page"],
+                                "regulation_page": passage["regulation_page"],
+                                "section": passage["section"],
+                                "excerpt": passage["excerpt"],
+                            }
+                            for passage in passages[:3]
+                        ]
+                        error_message = (
+                            "I couldn't generate an AI summary just now, but I found "
+                            "these relevant passages in the R25 regulations."
+                            if citations
+                            else "I couldn't complete that response. Your question is saved; "
+                            "please try again."
+                        )
+                        st.markdown(error_message)
+                        if citations:
+                            st.caption("AI summary unavailable. Showing matching R25 source text.")
+                        render_citations(citations)
                         st.session_state.messages.append(
                             {
                                 "role": "assistant",
-                                "content": str(error),
-                                "is_error": True,
+                                "content": error_message,
+                                "status": "answered" if citations else "not_found",
+                                "answer_type": "regulation_fallback",
+                                "citations": citations,
                             }
                         )

@@ -19,6 +19,9 @@ class AppImportTest(unittest.TestCase):
         response = module.get_small_talk_response("hi there")
         self.assertIn("hi", response.lower())
         self.assertIn("R25", response)
+        self.assertIsNone(
+            module.get_small_talk_response("Which attendance rule applies?")
+        )
 
     def test_general_question_stays_outside_regulation_retrieval(self):
         module = importlib.import_module("sahAI.backend.app")

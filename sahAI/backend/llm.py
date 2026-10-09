@@ -15,6 +15,17 @@ class AIServiceError(RuntimeError):
     """A safe, user-facing error from the answer service."""
 
 
+_HTTP_OPTIONS = types.HttpOptions(
+    timeout=30_000,
+    retryOptions=types.HttpRetryOptions(
+        attempts=3,
+        initialDelay=1,
+        maxDelay=4,
+        httpStatusCodes=[503],
+    ),
+)
+
+
 def _get_api_key() -> str | None:
     api_key = os.getenv("GEMINI_API_KEY")
     if api_key:
@@ -52,7 +63,10 @@ def generate_general_answer(question: str) -> str:
             "environment or platform secrets."
         )
 
-    client = genai.Client(api_key=api_key)
+    client = genai.Client(
+        api_key=api_key,
+        http_options=_HTTP_OPTIONS,
+    )
     try:
         response = client.models.generate_content(
             model=GEMINI_MODEL,
@@ -91,7 +105,10 @@ def generate_answer(
             "environment or platform secrets."
         )
 
-    client = genai.Client(api_key=api_key)
+    client = genai.Client(
+        api_key=api_key,
+        http_options=_HTTP_OPTIONS,
+    )
     evidence = [
         {
             "pdfPage": passage["pdf_page"],
